@@ -1,7 +1,5 @@
-streamlit
-opencv-python-headless
-tensorflow==2.14.0
-tensorflow-hub
-numpy
-Pillow
-streamlit-webrtc
+streamlit==1.37.1
+tensorflow==2.17.1
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+Pillow==10.1.0
