@@ -1,60 +1,43 @@
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
 import cv2
-import mediapipe as mp
 import numpy as np
+import tensorflow as tf
+import tensorflow_hub as hub
 
-st.set_page_config(page_title="Live Posture Detection")
-st.title("📸 Live Posture Detection")
+st.title("Posture Slouch Detector (MoveNet)")
 
-mp_pose = mp.solutions.pose
-mp_drawing = mp.solutions.drawing_utils
+# Load MoveNet once
+model = hub.load("https://tfhub.dev/google/movenet/singlepose/lightning/4")
+movenet = model.signatures['serving_default']
 
-def calculate_angle(a, b, c):
-    a = np.array(a)
-    b = np.array(b)
-    c = np.array(c)
-    ba = a - b
-    bc = c - b
-    cosine = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
-    angle = np.degrees(np.arccos(cosine))
-    return angle
+def movenet_detect(image):
+    img = cv2.resize(image, (192, 192))
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    inp = tf.convert_to_tensor(img, dtype=tf.int32)
+    inp = tf.expand_dims(inp, axis=0)
+    outputs = movenet(inp)
+    keypoints = outputs['output_0'].numpy()[0, 0, :, :]
+    return keypoints
 
-# Create a placeholder for the video frames
-frame_placeholder = st.empty()
+class VideoProcessor(VideoProcessorBase):
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
 
-cap = cv2.VideoCapture(0)  # 0 = your MacBook camera
+        keypoints = movenet_detect(img)
 
-with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            st.warning("⚠️ Could not read camera. Check permissions.")
-            break
+        # Shoulders
+        ls = keypoints[5]
+        rs = keypoints[6]
+        shoulder_y = (ls[1] + rs[1]) / 2
 
-        # Flip frame for mirror view
-        frame = cv2.flip(frame, 1)
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        if shoulder_y > 15:
+            cv2.putText(img, "SLOUCHING!", (30, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        else:
+            cv2.putText(img, "Good Posture", (30, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-        results = pose.process(frame_rgb)
+        return img
 
-        if results.pose_landmarks:
-            landmarks = results.pose_landmarks.landmark
-
-            shoulder = [landmarks[11].x, landmarks[11].y]
-            ear = [landmarks[7].x, landmarks[7].y]
-            hip = [landmarks[23].x, landmarks[23].y]
-
-            neck_angle = calculate_angle(ear, shoulder, hip)
-
-            if neck_angle < 155:
-                status = "⚠️ SLOUCHING!"
-                color = (0, 0, 255)
-            else:
-                status = "Good posture"
-                color = (0, 255, 0)
-
-            cv2.putText(frame, f"{status,neck_angle}", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-            mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-
-        # Display frame in Streamlit
-        frame_placeholder.image(frame, channels="BGR")
+webrtc_streamer(key="camera", video_processor_factory=VideoProcessor)

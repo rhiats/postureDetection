@@ -4,3 +4,4 @@ tensorflow==2.14.0
 tensorflow-hub
 numpy
 Pillow
+streamlit-webrtc
