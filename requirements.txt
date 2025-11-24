@@ -1,0 +1,6 @@
+streamlit
+mediapipe
+opencv-python
+numpy<2
+pyserial
+Pillow
